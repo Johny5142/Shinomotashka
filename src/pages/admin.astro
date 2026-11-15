@@ -1,0 +1,315 @@
+---
+import { asc, desc, eq } from "drizzle-orm";
+import Layout from "../layouts/Layout.astro";
+import { db } from "../server/db";
+import { leads, services, settings } from "../server/schema";
+import { isAuthenticated } from "../server/auth";
+import { demoMode } from "../server/demo";
+const authenticated = await isAuthenticated(Astro);
+const demo = demoMode();
+const items = authenticated
+  ? await db.select().from(services).orderBy(asc(services.position))
+  : [];
+const requests = authenticated
+  ? await db.select().from(leads).orderBy(desc(leads.createdAt)).limit(200)
+  : [];
+const [shop] = authenticated
+  ? await db.select().from(settings).where(eq(settings.id, 1))
+  : [];
+const notifications: Record<string, string> = {
+  pending: "Ожидает отправки",
+  sending: "Отправляется",
+  sent: "Отправлено",
+  disabled: "Telegram не подключён",
+  error: "Ошибка отправки",
+};
+const statusLabel = (status: string) =>
+  (
+    ({ new: "Новая", progress: "В работе", closed: "Закрыта" }) as Record<
+      string,
+      string
+    >
+  )[status];
+const date = (d: Date) =>
+  new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Europe/Moscow",
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(d);
+---
+
+<Layout title="Кабинет владельца — Точка колеса" demo={true}>
+  <div class="admin-shell">
+    <header class="admin-header">
+      <a class="brand" href="/">
+        ◉ Точка колеса
+      </a>
+      <a class="text-link" href="/" target="_blank">
+        Открыть сайт ↗
+      </a>
+    </header>
+    {demo && (
+      <div class="notice">
+        Демоадминка с общими данными. Используйте вымышленные сведения.
+        Изменения сбрасываются раз в сутки при первом обращении к сайту.
+      </div>
+    )}
+    {!authenticated ? (
+      <section class="login-card">
+        <p class="eyebrow">КАБИНЕТ ВЛАДЕЛЬЦА</p>
+        <h1>С возвращением</h1>
+        <p>Заявки, цены и контакты вашей мастерской.</p>
+        <form id="login-form">
+          <label>
+            Логин
+            <input
+              name="username"
+              required
+              maxlength="100"
+              autocomplete="username"
+            />
+          </label>
+          <label>
+            Пароль
+            <input
+              name="password"
+              type="password"
+              required
+              maxlength="256"
+              autocomplete="current-password"
+            />
+          </label>
+          <button class="button" type="submit">
+            Войти в кабинет ↗
+          </button>
+          <p role="status" class="feedback"></p>
+        </form>
+        <p class="muted">Доступ к демонстрации выдаёт автор сайта.</p>
+      </section>
+    ) : (
+      <>
+        <div class="admin-title">
+          <div>
+            <p class="eyebrow">КАБИНЕТ ВЛАДЕЛЬЦА</p>
+            <h1>Мастерская под контролем</h1>
+          </div>
+          <button id="logout" class="button secondary">
+            Выйти
+          </button>
+        </div>
+        <nav class="admin-tabs" aria-label="Разделы кабинета">
+          <a href="#leads">
+            Заявки{" "}
+            <span>{requests.filter((r) => r.status === "new").length}</span>
+          </a>
+          <a href="#edit-services">Услуги и цены</a>
+          <a href="#edit-settings">Контакты</a>
+        </nav>
+        <p id="admin-feedback" role="status" aria-live="polite"></p>
+        <section id="leads" class="admin-section">
+          <div class="section-heading">
+            <h2>Заявки</h2>
+            <button class="button secondary" id="refresh">
+              Обновить список
+            </button>
+          </div>
+          <p class="muted">Последние 200 обращений · время московское</p>
+          {!requests.length && (
+            <p class="empty-state">
+              Пока нет заявок. Отправьте первую с сайта.
+            </p>
+          )}
+          <div class="lead-list">
+            {requests.map((lead) => (
+              <article class="lead-card">
+                <div class="lead-head">
+                  <div>
+                    <strong>{lead.name}</strong>
+                    <span class="muted">{date(lead.createdAt)}</span>
+                  </div>
+                  <span class:list={["status-pill", lead.status]}>
+                    {statusLabel(lead.status)}
+                  </span>
+                </div>
+                <h3>{lead.serviceName}</h3>
+                <p>
+                  {demo ? (
+                    lead.phone
+                  ) : (
+                    <a href={`tel:${lead.phone.replace(/[^+\d]/g, "")}`}>
+                      {lead.phone}
+                    </a>
+                  )}
+                </p>
+                <details>
+                  <summary>Подробности обращения</summary>
+                  <p class="lead-comment">
+                    {lead.comment || "Без комментария"}
+                  </p>
+                  <p class="muted">ID: {lead.id}</p>
+                </details>
+                <form class="status-form" data-id={lead.id}>
+                  <label>
+                    Статус
+                    <select name="status">
+                      <option value="new" selected={lead.status === "new"}>
+                        Новая
+                      </option>
+                      <option
+                        value="progress"
+                        selected={lead.status === "progress"}
+                      >
+                        В работе
+                      </option>
+                      <option
+                        value="closed"
+                        selected={lead.status === "closed"}
+                      >
+                        Закрыта
+                      </option>
+                    </select>
+                  </label>
+                  <button class="button secondary" type="submit">
+                    Сохранить
+                  </button>
+                  <p class="feedback" role="status"></p>
+                </form>
+                <div class="notification">
+                  <span>
+                    Telegram ·{" "}
+                    {notifications[lead.notificationStatus] ||
+                      lead.notificationStatus}
+                  </span>
+                  {lead.notificationStatus !== "sent" && (
+                    <button class="retry-button" data-id={lead.id}>
+                      Повторить отправку
+                    </button>
+                  )}
+                </div>
+                {lead.notificationError && (
+                  <p class="error">{lead.notificationError}</p>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+        <section id="edit-services" class="admin-section">
+          <h2>Услуги и цены</h2>
+          <p class="muted">
+            Цены задаются в рублях. Изменения сразу появятся на сайте.
+          </p>
+          <div class="admin-service-grid">
+            {items.map((item) => (
+              <form class="service-form panel" data-id={item.id}>
+                <label>
+                  Название
+                  <input
+                    name="name"
+                    value={item.name}
+                    required
+                    maxlength="100"
+                  />
+                </label>
+                <label>
+                  Описание
+                  <textarea
+                    name="description"
+                    required
+                    maxlength="500"
+                    rows="2"
+                  >{item.description}</textarea>
+                </label>
+                <label>
+                  Цена, ₽
+                  <input
+                    name="price"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1000000"
+                    required
+                    value={item.price / 100}
+                  />
+                </label>
+                <button class="button secondary" type="submit">
+                  Сохранить услугу
+                </button>
+                <p role="status" class="feedback"></p>
+              </form>
+            ))}
+          </div>
+        </section>
+        <section id="edit-settings" class="admin-section">
+          <h2>Информация о мастерской</h2>
+          {shop && (
+            <form id="settings-form" class="panel">
+              <div class="form-row">
+                <label>
+                  Название
+                  <input
+                    name="name"
+                    value={shop.name}
+                    required
+                    maxlength="100"
+                  />
+                </label>
+                <label>
+                  Город
+                  <input
+                    name="city"
+                    value={shop.city}
+                    required
+                    maxlength="100"
+                  />
+                </label>
+              </div>
+              <label>
+                Адрес
+                <input
+                  name="address"
+                  value={shop.address}
+                  required
+                  maxlength="300"
+                />
+              </label>
+              <div class="form-row">
+                <label>
+                  Телефон
+                  <input
+                    name="phone"
+                    value={shop.phone}
+                    type="tel"
+                    maxlength="32"
+                  />
+                </label>
+                <label>
+                  График
+                  <input
+                    name="hours"
+                    value={shop.hours}
+                    required
+                    maxlength="150"
+                  />
+                </label>
+              </div>
+              <label>
+                Что входит в комплекс
+                <textarea
+                  name="included"
+                  required
+                  maxlength="1000"
+                  rows="3"
+                >{shop.included}</textarea>
+              </label>
+              <button class="button" type="submit">
+                Сохранить информацию ↗
+              </button>
+              <p role="status" class="feedback"></p>
+            </form>
+          )}
+        </section>
+      </>
+    )}
+  </div>
+  <script src="../scripts/admin.ts"></script>
+</Layout>

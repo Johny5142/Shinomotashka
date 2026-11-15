@@ -1,0 +1,28 @@
+{
+  "name": "tochka-kolesa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=.env node_modules/astro/astro.js dev --host 0.0.0.0 --port 8080",
+    "build": "astro check && astro build",
+    "start": "node --env-file-if-exists=.env scripts/start.mjs",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@astrojs/node": "^11.1.13",
+    "@fontsource/inter": "^5.2.0",
+    "astro": "^7.4.12",
+    "drizzle-orm": "^0.45.4",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@types/node": "^24.0.0",
+    "prettier": "^3.10.1",
+    "prettier-plugin-astro": "^1.1.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
